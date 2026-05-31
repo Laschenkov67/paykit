@@ -80,6 +80,10 @@ type initResp struct {
 	PaymentURL string `json:"PaymentURL"`
 }
 
+func (p *Provider) SignForTest(params map[string]string) string {
+	return p.sign(params)
+}
+
 func (p *Provider) CreatePayment(ctx context.Context, req paykit.CreatePaymentRequest) (*paykit.Payment, error) {
 	signParams := map[string]string{
 		"TerminalKey": p.terminalKey,
