@@ -1,0 +1,23 @@
+run:
+  timeout: 5m
+
+linters:
+  enable:
+    - govet
+    - errcheck
+    - staticcheck
+    - revive
+    - gosimple
+    - ineffassign
+    - unused
+    - gofmt
+    - goimports
+    - unconvert
+    - misspell
+    - bodyclose
+    - prealloc
+
+issues:
+  exclude-rules:
+    - path: _test\.go
+      linters: [errcheck, prealloc]
