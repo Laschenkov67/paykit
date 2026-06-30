@@ -3,6 +3,7 @@ package yookassa
 import (
 	"context"
 	"crypto/rand"
+	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
@@ -71,7 +72,7 @@ func (p *Provider) CreatePayment(ctx context.Context, req paykit.CreatePaymentRe
 	body := ykCreateReq{
 		Amount:      ykAmount{Value: req.Amount.Major(), Currency: req.Amount.Currency},
 		Description: req.Description,
-		Capture:     req.Capture || true, // YooKassa one-stage by default
+		Capture:     !req.TwoStage,
 		Confirmation: ykConfirmation{
 			Type:      "redirect",
 			ReturnURL: req.ReturnURL,
@@ -234,35 +235,7 @@ func cloneMeta(m map[string]string, orderID string) map[string]string {
 }
 
 func basicAuth(user, pass string) string {
-	return "Basic " + b64(user+":"+pass)
-}
-
-func b64(s string) string {
-	const tbl = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/"
-	in := []byte(s)
-	out := make([]byte, 0, (len(in)+2)/3*4)
-	for i := 0; i < len(in); i += 3 {
-		var n uint32
-		n |= uint32(in[i]) << 16
-		if i+1 < len(in) {
-			n |= uint32(in[i+1]) << 8
-		}
-		if i+2 < len(in) {
-			n |= uint32(in[i+2])
-		}
-		out = append(out, tbl[(n>>18)&0x3F], tbl[(n>>12)&0x3F])
-		if i+1 < len(in) {
-			out = append(out, tbl[(n>>6)&0x3F])
-		} else {
-			out = append(out, '=')
-		}
-		if i+2 < len(in) {
-			out = append(out, tbl[n&0x3F])
-		} else {
-			out = append(out, '=')
-		}
-	}
-	return string(out)
+	return "Basic " + base64.StdEncoding.EncodeToString([]byte(user+":"+pass))
 }
 
 func newIdempotencyKey() string {

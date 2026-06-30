@@ -3,6 +3,7 @@ package paykit
 import (
 	"fmt"
 	"strconv"
+	"strings"
 )
 
 type Money struct {
@@ -31,39 +32,36 @@ func (m Money) Major() string {
 func (m Money) String() string { return m.Major() + " " + m.Currency }
 
 func ParseMajor(s, currency string) (Money, error) {
-	var major, minor int64
-	var err error
-	dot := -1
-	for i := 0; i < len(s); i++ {
-		if s[i] == '.' {
-			dot = i
-			break
-		}
+	neg := strings.HasPrefix(s, "-")
+	body := s
+	if neg {
+		body = s[1:]
 	}
-	if dot < 0 {
-		major, err = strconv.ParseInt(s, 10, 64)
-		if err != nil {
-			return Money{}, fmt.Errorf("paykit: parse money: %w", err)
-		}
-		return Money{Amount: major * 100, Currency: currency}, nil
+	dot := strings.IndexByte(body, '.')
+	majorStr, frac := body, ""
+	if dot >= 0 {
+		majorStr, frac = body[:dot], body[dot+1:]
 	}
-	major, err = strconv.ParseInt(s[:dot], 10, 64)
+	major, err := strconv.ParseInt(majorStr, 10, 64)
 	if err != nil {
 		return Money{}, fmt.Errorf("paykit: parse money: %w", err)
 	}
-	frac := s[dot+1:]
 	if len(frac) == 1 {
 		frac += "0"
 	}
 	if len(frac) > 2 {
 		frac = frac[:2]
 	}
-	minor, err = strconv.ParseInt(frac, 10, 64)
-	if err != nil {
-		return Money{}, fmt.Errorf("paykit: parse money: %w", err)
+	var minor int64
+	if frac != "" {
+		minor, err = strconv.ParseInt(frac, 10, 64)
+		if err != nil {
+			return Money{}, fmt.Errorf("paykit: parse money: %w", err)
+		}
 	}
-	if major < 0 {
-		minor = -minor
+	amount := major*100 + minor
+	if neg {
+		amount = -amount
 	}
-	return Money{Amount: major*100 + minor, Currency: currency}, nil
+	return Money{Amount: amount, Currency: currency}, nil
 }

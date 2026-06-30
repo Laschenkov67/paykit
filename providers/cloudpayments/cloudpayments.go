@@ -3,10 +3,12 @@ package cloudpayments
 
 import (
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"net/http"
+	"strconv"
 	"time"
 
 	"github.com/laschenkov67/paykit"
@@ -62,6 +64,9 @@ func (p *Provider) CreatePayment(ctx context.Context, req paykit.CreatePaymentRe
 	if req.Customer != nil {
 		body["Email"] = req.Customer.Email
 	}
+	if req.TwoStage {
+		body["RequireConfirmation"] = true
+	}
 
 	var out struct {
 		cpResp
@@ -104,11 +109,15 @@ func (p *Provider) GetPayment(ctx context.Context, id string) (*paykit.Payment, 
 			Message: firstNonEmpty(out.Message, errString(err)),
 		}
 	}
+	// out.Model.Amount arrives as a JSON float64; convert via a fixed 2-decimal
+	// string instead of multiplying by 100 directly, which can truncate a cent
+	// off amounts like 19.99 due to binary floating-point rounding.
+	amount, _ := paykit.ParseMajor(strconv.FormatFloat(out.Model.Amount, 'f', 2, 64), out.Model.Currency)
 	return &paykit.Payment{
 		ID:       fmt.Sprintf("%d", out.Model.TransactionID),
 		OrderID:  out.Model.InvoiceID,
 		Status:   mapStatus(out.Model.Status),
-		Amount:   paykit.Money{Amount: int64(out.Model.Amount * 100), Currency: out.Model.Currency},
+		Amount:   amount,
 		Provider: "cloudpayments",
 		Raw:      raw,
 	}, nil
@@ -171,7 +180,7 @@ func (p *Provider) Refund(ctx context.Context, paymentID string, amount *paykit.
 
 func (p *Provider) headers() map[string]string {
 	return map[string]string{
-		"Authorization": "Basic " + basic(p.publicID, p.apiPass),
+		"Authorization": "Basic " + base64.StdEncoding.EncodeToString([]byte(p.publicID+":"+p.apiPass)),
 		"User-Agent":    p.cfg.UserAgent,
 	}
 }
@@ -203,32 +212,4 @@ func errString(e error) string {
 		return ""
 	}
 	return e.Error()
-}
-
-func basic(user, pass string) string {
-	const tbl = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/"
-	in := []byte(user + ":" + pass)
-	out := make([]byte, 0, (len(in)+2)/3*4)
-	for i := 0; i < len(in); i += 3 {
-		var n uint32
-		n |= uint32(in[i]) << 16
-		if i+1 < len(in) {
-			n |= uint32(in[i+1]) << 8
-		}
-		if i+2 < len(in) {
-			n |= uint32(in[i+2])
-		}
-		out = append(out, tbl[(n>>18)&0x3F], tbl[(n>>12)&0x3F])
-		if i+1 < len(in) {
-			out = append(out, tbl[(n>>6)&0x3F])
-		} else {
-			out = append(out, '=')
-		}
-		if i+2 < len(in) {
-			out = append(out, tbl[n&0x3F])
-		} else {
-			out = append(out, '=')
-		}
-	}
-	return string(out)
 }

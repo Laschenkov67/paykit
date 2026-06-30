@@ -1,9 +1,6 @@
 package stripe
 
 import (
-	"crypto/hmac"
-	"crypto/sha256"
-	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -14,6 +11,7 @@ import (
 	"time"
 
 	"github.com/laschenkov67/paykit"
+	"github.com/laschenkov67/paykit/internal/signing"
 )
 
 func (p *Provider) ParseWebhook(r *http.Request) (*paykit.WebhookEvent, error) {
@@ -65,6 +63,12 @@ func (p *Provider) ParseWebhook(r *http.Request) (*paykit.WebhookEvent, error) {
 	return out, nil
 }
 
+// WebhookAck satisfies paykit.Provider. Stripe only needs a plain 2xx
+// response to consider a notification delivered.
+func (p *Provider) WebhookAck(_ *paykit.WebhookEvent) (int, []byte) {
+	return http.StatusOK, nil
+}
+
 func (p *Provider) verifySignature(header string, body []byte) error {
 	if header == "" {
 		return paykit.ErrInvalidSignature
@@ -92,10 +96,9 @@ func (p *Provider) verifySignature(header string, body []byte) error {
 	if time.Since(time.Unix(t, 0)) > 5*time.Minute {
 		return paykit.ErrInvalidSignature
 	}
-	mac := hmac.New(sha256.New, []byte(p.webhookSecret))
-	fmt.Fprintf(mac, "%s.%s", ts, body)
-	want := hex.EncodeToString(mac.Sum(nil))
-	if !hmac.Equal([]byte(v1), []byte(want)) {
+	signedPayload := fmt.Sprintf("%s.%s", ts, body)
+	want := signing.HMACSHA256Hex([]byte(p.webhookSecret), []byte(signedPayload))
+	if !signing.EqualHex(v1, want) {
 		return paykit.ErrInvalidSignature
 	}
 	return nil

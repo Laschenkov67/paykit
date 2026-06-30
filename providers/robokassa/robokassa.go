@@ -4,12 +4,13 @@ import (
 	"context"
 	"crypto/md5"
 	"encoding/hex"
+	"encoding/xml"
 	"errors"
 	"fmt"
+	"io"
 	"net/http"
 	"net/url"
 	"strconv"
-	"strings"
 	"time"
 
 	"github.com/laschenkov67/paykit"
@@ -107,20 +108,18 @@ func (p *Provider) GetPayment(ctx context.Context, invID string) (*paykit.Paymen
 	}
 	defer resp.Body.Close()
 
-	buf := make([]byte, 0, 4096)
-	tmp := make([]byte, 1024)
-	for {
-		n, e := resp.Body.Read(tmp)
-		buf = append(buf, tmp[:n]...)
-		if e != nil {
-			break
-		}
+	buf, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, &paykit.ProviderError{Provider: "robokassa", Message: err.Error()}
 	}
-	code := extractXMLInt(string(buf), "<State><Code>", "</Code>")
+	var state opStateResp
+	if err := xml.Unmarshal(buf, &state); err != nil {
+		return nil, fmt.Errorf("robokassa: parse state response: %w", err)
+	}
 	return &paykit.Payment{
 		ID:       invID,
 		OrderID:  invID,
-		Status:   mapStateCode(code),
+		Status:   mapStateCode(state.State.Code),
 		Provider: "robokassa",
 		Raw:      buf,
 	}, nil
@@ -155,17 +154,4 @@ func mapStateCode(code int) paykit.PaymentStatus {
 		return paykit.StatusCanceled
 	}
 	return paykit.StatusPending
-}
-
-func extractXMLInt(s, open, close string) int {
-	i := strings.Index(s, open)
-	if i < 0 {
-		return 0
-	}
-	j := strings.Index(s[i+len(open):], close)
-	if j < 0 {
-		return 0
-	}
-	v, _ := strconv.Atoi(strings.TrimSpace(s[i+len(open) : i+len(open)+j]))
-	return v
 }

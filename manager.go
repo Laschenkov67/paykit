@@ -72,6 +72,13 @@ func (m *Manager) HandleWebhook(onEvent func(*WebhookEvent)) http.HandlerFunc {
 		if onEvent != nil {
 			onEvent(ev)
 		}
-		w.WriteHeader(http.StatusOK)
+		status, body := p.WebhookAck(ev)
+		if status == 0 {
+			status = http.StatusOK
+		}
+		w.WriteHeader(status)
+		if len(body) > 0 {
+			_, _ = w.Write(body)
+		}
 	}
 }

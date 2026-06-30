@@ -21,6 +21,14 @@ type Provider interface {
 	Refund(ctx context.Context, paymentID string, amount *Money) (*Refund, error)
 
 	ParseWebhook(r *http.Request) (*WebhookEvent, error)
+
+	// WebhookAck returns the HTTP status code and response body the provider
+	// expects after a webhook notification has been successfully processed.
+	// PSPs that don't see their required acknowledgement (e.g. a literal "OK"
+	// body) will keep retrying the same notification, so a generic 200 with
+	// an empty body is not safe for every provider. ev is the event returned
+	// by the preceding ParseWebhook call.
+	WebhookAck(ev *WebhookEvent) (statusCode int, body []byte)
 }
 
 type CreatePaymentRequest struct {
@@ -30,7 +38,7 @@ type CreatePaymentRequest struct {
 	Customer       *Customer         // optional customer info (email / phone)
 	ReturnURL      string            // where the user is redirected after payment
 	Metadata       map[string]string // arbitrary key/value, persisted by PSP
-	Capture        bool              // true = one-stage (default), false = auth-only
+	TwoStage       bool              // false = one-stage, capture immediately (default); true = authorize only, settle later via CapturePayment
 	IdempotencyKey string            // optional; auto-generated when empty
 }
 

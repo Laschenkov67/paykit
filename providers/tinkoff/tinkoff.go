@@ -5,9 +5,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
-	"encoding/json"
 	"errors"
-	"fmt"
 	"net/http"
 	"sort"
 	"strconv"
@@ -15,6 +13,7 @@ import (
 
 	"github.com/laschenkov67/paykit"
 	"github.com/laschenkov67/paykit/internal/httpx"
+	"github.com/laschenkov67/paykit/internal/signing"
 )
 
 const defaultBaseURL = "https://securepay.tinkoff.ru/v2"
@@ -61,6 +60,7 @@ type initReq struct {
 	Amount          int64             `json:"Amount"`
 	OrderID         string            `json:"OrderId"`
 	Description     string            `json:"Description,omitempty"`
+	PayType         string            `json:"PayType,omitempty"`
 	SuccessURL      string            `json:"SuccessURL,omitempty"`
 	FailURL         string            `json:"FailURL,omitempty"`
 	NotificationURL string            `json:"NotificationURL,omitempty"`
@@ -85,6 +85,10 @@ func (p *Provider) SignForTest(params map[string]string) string {
 }
 
 func (p *Provider) CreatePayment(ctx context.Context, req paykit.CreatePaymentRequest) (*paykit.Payment, error) {
+	payType := ""
+	if req.TwoStage {
+		payType = "T" // two-stage: authorize only, capture later via CapturePayment
+	}
 	signParams := map[string]string{
 		"TerminalKey": p.terminalKey,
 		"Amount":      strconv.FormatInt(req.Amount.Amount, 10),
@@ -92,11 +96,15 @@ func (p *Provider) CreatePayment(ctx context.Context, req paykit.CreatePaymentRe
 		"Description": req.Description,
 		"SuccessURL":  req.ReturnURL,
 	}
+	if payType != "" {
+		signParams["PayType"] = payType
+	}
 	body := initReq{
 		TerminalKey: p.terminalKey,
 		Amount:      req.Amount.Amount,
 		OrderID:     req.OrderID,
 		Description: req.Description,
+		PayType:     payType,
 		SuccessURL:  req.ReturnURL,
 		Token:       p.sign(signParams),
 		DATA:        req.Metadata,
@@ -194,12 +202,12 @@ func (p *Provider) Refund(ctx context.Context, paymentID string, amount *paykit.
 	body := map[string]any{
 		"TerminalKey": p.terminalKey,
 		"PaymentId":   paymentID,
-		"Token":       p.sign(signParams),
 	}
 	if amount != nil {
 		signParams["Amount"] = strconv.FormatInt(amount.Amount, 10)
 		body["Amount"] = amount.Amount
 	}
+	body["Token"] = p.sign(signParams)
 	var out initResp
 	status, raw, err := httpx.DoJSON(ctx, p.cfg.HTTPClient,
 		http.MethodPost, p.base+"/Cancel", headers(p.cfg.UserAgent), body, &out)
@@ -248,8 +256,5 @@ func mapErr(provider string, status int, body []byte, code, msg string, err erro
 }
 
 func (p *Provider) Verify(params map[string]string, token string) bool {
-	return p.sign(params) == token
+	return signing.EqualHex(p.sign(params), token)
 }
-
-var _ = json.Marshal
-var _ = fmt.Sprintf

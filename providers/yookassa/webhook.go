@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 
 	"github.com/laschenkov67/paykit"
@@ -17,6 +18,9 @@ type ykNotification struct {
 
 func (p *Provider) ParseWebhook(r *http.Request) (*paykit.WebhookEvent, error) {
 	defer r.Body.Close()
+	if !IsAllowedIP(r.RemoteAddr) {
+		return nil, paykit.ErrInvalidSignature
+	}
 	raw, err := io.ReadAll(io.LimitReader(r.Body, 1<<20))
 	if err != nil {
 		return nil, fmt.Errorf("yookassa webhook: read body: %w", err)
@@ -52,6 +56,10 @@ func (p *Provider) ParseWebhook(r *http.Request) (*paykit.WebhookEvent, error) {
 	return ev, nil
 }
 
+func (p *Provider) WebhookAck(_ *paykit.WebhookEvent) (int, []byte) {
+	return http.StatusOK, nil
+}
+
 func AllowedIPs() []string {
 	return []string{
 		"185.71.76.0/27",
@@ -62,4 +70,35 @@ func AllowedIPs() []string {
 		"77.75.154.128/25",
 		"2a02:5180::/32",
 	}
+}
+
+var allowedIPNets = mustParseCIDRs(AllowedIPs())
+
+func mustParseCIDRs(cidrs []string) []*net.IPNet {
+	nets := make([]*net.IPNet, 0, len(cidrs))
+	for _, cidr := range cidrs {
+		_, n, err := net.ParseCIDR(cidr)
+		if err != nil {
+			panic("yookassa: invalid CIDR in AllowedIPs: " + cidr)
+		}
+		nets = append(nets, n)
+	}
+	return nets
+}
+
+func IsAllowedIP(addr string) bool {
+	host := addr
+	if h, _, err := net.SplitHostPort(addr); err == nil {
+		host = h
+	}
+	ip := net.ParseIP(host)
+	if ip == nil {
+		return false
+	}
+	for _, n := range allowedIPNets {
+		if n.Contains(ip) {
+			return true
+		}
+	}
+	return false
 }

@@ -34,6 +34,9 @@ func TestParseMajor(t *testing.T) {
 		{"199", "RUB", 19900},
 		{"1.5", "USD", 150},
 		{"0.01", "EUR", 1},
+		{"-1.50", "RUB", -150},
+		{"-0.50", "RUB", -50},
+		{"-199", "RUB", -19900},
 	}
 	for _, c := range cases {
 		m, err := paykit.ParseMajor(c.in, c.currency)

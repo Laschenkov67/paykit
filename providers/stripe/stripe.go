@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"net/http"
 	"net/url"
 	"strconv"
@@ -59,6 +60,9 @@ func (p *Provider) CreatePayment(ctx context.Context, req paykit.CreatePaymentRe
 	form.Set("line_items[0][price_data][unit_amount]", strconv.FormatInt(req.Amount.Amount, 10))
 	form.Set("line_items[0][price_data][product_data][name]", emptyOr(req.Description, "Order "+req.OrderID))
 	form.Set("client_reference_id", req.OrderID)
+	if req.TwoStage {
+		form.Set("payment_intent_data[capture_method]", "manual")
+	}
 	for k, v := range req.Metadata {
 		form.Set("metadata["+k+"]", v)
 	}
@@ -152,11 +156,11 @@ func (p *Provider) Refund(ctx context.Context, paymentID string, amount *paykit.
 }
 
 func (p *Provider) doForm(ctx context.Context, method, path string, form url.Values, out any) (json.RawMessage, error) {
-	var body strings.Reader
+	var body io.Reader
 	if form != nil {
-		body = *strings.NewReader(form.Encode())
+		body = strings.NewReader(form.Encode())
 	}
-	req, err := http.NewRequestWithContext(ctx, method, p.base+path, &body)
+	req, err := http.NewRequestWithContext(ctx, method, p.base+path, body)
 	if err != nil {
 		return nil, err
 	}
@@ -168,7 +172,10 @@ func (p *Provider) doForm(ctx context.Context, method, path string, form url.Val
 		return nil, &paykit.ProviderError{Provider: "stripe", Message: err.Error()}
 	}
 	defer resp.Body.Close()
-	raw := readAll(resp.Body)
+	raw, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, &paykit.ProviderError{Provider: "stripe", Message: err.Error()}
+	}
 	if resp.StatusCode/100 != 2 {
 		var apiErr struct {
 			Error struct {
@@ -233,17 +240,4 @@ func emptyOr(a, b string) string {
 		return b
 	}
 	return a
-}
-
-func readAll(r interface{ Read([]byte) (int, error) }) []byte {
-	out := make([]byte, 0, 4096)
-	buf := make([]byte, 4096)
-	for {
-		n, err := r.Read(buf)
-		out = append(out, buf[:n]...)
-		if err != nil {
-			break
-		}
-	}
-	return out
 }

@@ -6,7 +6,6 @@ import (
 	"io"
 	"net/http"
 	"net/url"
-	"strconv"
 	"strings"
 
 	"crypto/hmac"
@@ -38,11 +37,11 @@ func (p *Provider) ParseWebhook(r *http.Request) (*paykit.WebhookEvent, error) {
 		return nil, fmt.Errorf("%w: %s", paykit.ErrInvalidRequest, err)
 	}
 
-	amountF, _ := strconv.ParseFloat(form.Get("Amount"), 64)
+	amount, _ := paykit.ParseMajor(form.Get("Amount"), strings.ToUpper(form.Get("Currency")))
 	pay := &paykit.Payment{
 		ID:       form.Get("TransactionId"),
 		OrderID:  form.Get("InvoiceId"),
-		Amount:   paykit.Money{Amount: int64(amountF * 100), Currency: strings.ToUpper(form.Get("Currency"))},
+		Amount:   amount,
 		Status:   mapStatus(form.Get("Status")),
 		Provider: "cloudpayments",
 		Raw:      raw,
@@ -59,4 +58,8 @@ func (p *Provider) ParseWebhook(r *http.Request) (*paykit.WebhookEvent, error) {
 		ev.Type = paykit.EventPaymentPending
 	}
 	return ev, nil
+}
+
+func (p *Provider) WebhookAck(_ *paykit.WebhookEvent) (int, []byte) {
+	return http.StatusOK, []byte(`{"code":0}`)
 }

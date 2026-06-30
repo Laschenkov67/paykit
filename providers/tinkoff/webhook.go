@@ -77,3 +77,7 @@ func (p *Provider) ParseWebhook(r *http.Request) (*paykit.WebhookEvent, error) {
 	}
 	return ev, nil
 }
+
+func (p *Provider) WebhookAck(_ *paykit.WebhookEvent) (int, []byte) {
+	return http.StatusOK, []byte("OK")
+}

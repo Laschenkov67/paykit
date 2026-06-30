@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/laschenkov67/paykit"
+	"github.com/laschenkov67/paykit/internal/signing"
 )
 
 func (p *Provider) ParseWebhook(r *http.Request) (*paykit.WebhookEvent, error) {
@@ -19,7 +20,7 @@ func (p *Provider) ParseWebhook(r *http.Request) (*paykit.WebhookEvent, error) {
 		return nil, paykit.ErrInvalidRequest
 	}
 	want := md5hex(fmt.Sprintf("%s:%s:%s", outSum, invID, p.pass2))
-	if want != sig {
+	if !signing.EqualHex(want, sig) {
 		return nil, paykit.ErrInvalidSignature
 	}
 	amount, _ := paykit.ParseMajor(outSum, "RUB")
@@ -36,3 +37,11 @@ func (p *Provider) ParseWebhook(r *http.Request) (*paykit.WebhookEvent, error) {
 }
 
 func AckResponse(invID string) string { return "OK" + invID }
+
+func (p *Provider) WebhookAck(ev *paykit.WebhookEvent) (int, []byte) {
+	invID := ""
+	if ev != nil && ev.Payment != nil {
+		invID = ev.Payment.OrderID
+	}
+	return http.StatusOK, []byte(AckResponse(invID))
+}
